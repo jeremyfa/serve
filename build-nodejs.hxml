@@ -1,0 +1,8 @@
+--class-path src
+--class-path test
+--main Main
+--library hxnodejs
+--define js-source-map
+--define js-es=6
+--define nodejs
+--js out/nodejs/server.js

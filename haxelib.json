@@ -1,0 +1,19 @@
+{
+    "name": "serve",
+    "url": "https://github.com/jeremyfa/serve",
+    "license": "MIT",
+    "tags": [
+        "server",
+        "nodejs",
+        "node",
+        "php",
+        "http",
+        "express",
+        "router"
+    ],
+    "description": "A cross-platform HTTP server with built-in routing support.",
+    "version": "1.0.0",
+    "releasenote": "Initial release",
+    "contributors": ["jeremyfa"],
+    "dependencies": {}
+}
