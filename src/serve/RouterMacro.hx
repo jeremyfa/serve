@@ -44,7 +44,7 @@ class RouterMacro {
                                     routing.add('if (req_.method == ');
                                     routing.add(method);
                                     routing.add(' && ((matched_ = matchRoute(');
-                                    routing.add(new Printer().printExpr(meta.params[0]).replace("$", ":"));
+                                    routing.add(removeTrailingSlash(new Printer().printExpr(meta.params[0]).replace("$", ":")));
                                     routing.add(', req_.uri)) != null)) {\n');
                                     routing.add('@:privateAccess req_.routeResolved = true;\n');
                                     routing.add('@:privateAccess req_.params = matched_;\n');
@@ -91,6 +91,16 @@ class RouterMacro {
         }
 
         return fields;
+
+    }
+
+    static function removeTrailingSlash(route:String):String {
+
+        if (route.length >= 2 && route.endsWith('/')) {
+            return route.substring(0, route.length - 1);
+        }
+
+        return route;
 
     }
 

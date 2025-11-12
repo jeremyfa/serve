@@ -45,7 +45,12 @@ class PhpBackend implements Backend {
         }
 
         // Request uri
-        final uri:String = Syntax.code("$_SERVER[\"REQUEST_URI\"]").split('?')[0];
+        var uri:String = Syntax.code("$_SERVER[\"REQUEST_URI\"]").split('?')[0];
+
+        // Remove trailing slash
+        if (uri.length >= 2 && uri.endsWith('/')) {
+            uri = uri.substring(0, uri.length - 1);
+        }
 
         // Request method
         final method:HttpMethod = switch (Syntax.code("$_SERVER[\"REQUEST_METHOD\"]"):String) {

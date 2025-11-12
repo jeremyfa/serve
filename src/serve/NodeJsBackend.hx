@@ -43,7 +43,12 @@ class NodeJsBackend implements Backend {
         // Parse URL using the newer URL API
         final fullUrl = 'http://$serverHost:$serverPort${nodeReq.url}';
         final parsedUrl = new URL(fullUrl);
-        final uri = parsedUrl.pathname;
+        var uri = parsedUrl.pathname;
+
+        // Remove trailing slash
+        if (uri.length >= 2 && uri.endsWith('/')) {
+            uri = uri.substring(0, uri.length - 1);
+        }
 
         // Parse headers
         final headers:Map<String,String> = new Map();

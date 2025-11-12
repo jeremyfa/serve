@@ -3,8 +3,6 @@ import serve.Server;
 
 function main() {
 
-    static var time = Date.now().getTime();
-
     // Create server and bind it to app/router
     var server = new Server(
         #if php
