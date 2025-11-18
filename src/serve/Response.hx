@@ -76,30 +76,42 @@ class Response {
     }
 
     public function sendFile(filePath:String):Response {
-        if (!server.backend.fileExists(filePath)) {
-            return notFound();
-        }
+        // Check which type of backend we have
+        if (Std.isOfType(server.backend, SyncFileBackend)) {
+            var syncBackend:SyncFileBackend = cast server.backend;
 
-        if (server.backend.isDirectory(filePath)) {
-            return notFound();
-        }
+            if (!syncBackend.fileExists(filePath)) {
+                return notFound();
+            }
 
-        // Get file extension and determine content type
-        var ext = haxe.io.Path.extension(filePath).toLowerCase();
-        var contentType = MimeTypes.getContentType(ext);
+            if (syncBackend.isDirectory(filePath)) {
+                return notFound();
+            }
 
-        // Set content type header
-        header('Content-Type', contentType);
+            // Get file extension and determine content type
+            var ext = haxe.io.Path.extension(filePath).toLowerCase();
+            var contentType = MimeTypes.getContentType(ext);
 
-        // Check if this is a binary file type
-        if (isBinaryContent(contentType)) {
-            // Read and send binary content
-            var content = server.backend.readBinaryFile(filePath);
-            binary(content);
+            // Set content type header
+            header('Content-Type', contentType);
+
+            // Check if this is a binary file type
+            if (isBinaryContent(contentType)) {
+                // Read and send binary content
+                var content = syncBackend.readBinaryFile(filePath);
+                binary(content);
+            } else {
+                // Read and send text content
+                var content = syncBackend.readFile(filePath);
+                text(content);
+            }
+        } else if (Std.isOfType(server.backend, AsyncFileBackend)) {
+            // For async backend, we need to use async operations
+            // This is more complex and should ideally be handled through Static handler
+            // For now, throw an error to indicate async file operations should use Static
+            throw "sendFile() with async backend not implemented. Use Static handler for async file serving.";
         } else {
-            // Read and send text content
-            var content = server.backend.readFile(filePath);
-            text(content);
+            return notFound();
         }
 
         return this;

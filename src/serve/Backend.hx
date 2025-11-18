@@ -18,14 +18,4 @@ interface Backend {
 
     function responseBinary(response:Response, data:Bytes):Void;
 
-    function fileExists(path:String):Bool;
-
-    function isDirectory(path:String):Bool;
-
-    function readFile(path:String):String;
-
-    function readBinaryFile(path:String):Bytes;
-
-    function getFileMTime(path:String):Float;
-
 }

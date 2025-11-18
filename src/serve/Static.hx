@@ -93,15 +93,29 @@ class Static {
             }
         }
 
+        // Branch based on backend type
+        if (Std.isOfType(server.backend, AsyncFileBackend)) {
+            handleRequestAsync(req, res, filePath);
+        } else if (Std.isOfType(server.backend, SyncFileBackend)) {
+            handleRequestSync(req, res, filePath);
+        } else {
+            // Backend doesn't support file operations
+            return;
+        }
+    }
+
+    function handleRequestSync(req:Request, res:Response, filePath:String):Void {
+        var syncBackend:SyncFileBackend = cast server.backend;
+
         // Try to serve the file
-        if (tryServeFile(filePath, req, res)) {
+        if (tryServeFileSync(filePath, req, res, syncBackend)) {
             return;
         }
 
         // If it's a directory, try serving index file
-        if (server.backend.isDirectory(filePath)) {
+        if (syncBackend.isDirectory(filePath)) {
             var indexPath = Path.join([filePath, options.index]);
-            if (tryServeFile(indexPath, req, res)) {
+            if (tryServeFileSync(indexPath, req, res, syncBackend)) {
                 return;
             }
         }
@@ -109,7 +123,7 @@ class Static {
         // Try with extensions if provided
         for (ext in options.extensions) {
             var extPath = filePath + "." + ext;
-            if (tryServeFile(extPath, req, res)) {
+            if (tryServeFileSync(extPath, req, res, syncBackend)) {
                 return;
             }
         }
@@ -117,12 +131,59 @@ class Static {
         // File not found, let next handler deal with it
     }
 
-    function tryServeFile(filePath:String, req:Request, res:Response):Bool {
-        if (!server.backend.fileExists(filePath)) {
+    function handleRequestAsync(req:Request, res:Response, filePath:String):Void {
+        var asyncBackend:AsyncFileBackend = cast server.backend;
+
+        res.async(next -> {
+            tryServeFileAsync(filePath, req, res, asyncBackend, (served) -> {
+                if (served) {
+                    // File was served successfully
+                    return;
+                }
+
+                // Check if it's a directory
+                asyncBackend.isDirectoryAsync(filePath, (isDir) -> {
+                    if (isDir) {
+                        // Try serving index file
+                        var indexPath = Path.join([filePath, options.index]);
+                        tryServeFileAsync(indexPath, req, res, asyncBackend, (served) -> {
+                            if (!served) {
+                                // Index not found, try extensions
+                                tryExtensionsAsync(filePath, req, res, asyncBackend, 0, next);
+                            }
+                        });
+                    } else {
+                        // Not a directory, try extensions
+                        tryExtensionsAsync(filePath, req, res, asyncBackend, 0, next);
+                    }
+                });
+            });
+        });
+    }
+
+    function tryExtensionsAsync(filePath:String, req:Request, res:Response, backend:AsyncFileBackend,
+                                 index:Int, next:()->Void):Void {
+        if (index >= options.extensions.length) {
+            // No more extensions to try
+            next(); // Continue to next handler
+            return;
+        }
+
+        var extPath = filePath + "." + options.extensions[index];
+        tryServeFileAsync(extPath, req, res, backend, (served) -> {
+            if (!served) {
+                // Try next extension
+                tryExtensionsAsync(filePath, req, res, backend, index + 1, next);
+            }
+        });
+    }
+
+    function tryServeFileSync(filePath:String, req:Request, res:Response, backend:SyncFileBackend):Bool {
+        if (!backend.fileExists(filePath)) {
             return false;
         }
 
-        if (server.backend.isDirectory(filePath)) {
+        if (backend.isDirectory(filePath)) {
             return false;
         }
 
@@ -142,7 +203,7 @@ class Static {
 
         // Generate and set ETag if enabled
         if (options.etag) {
-            var mtime = server.backend.getFileMTime(filePath);
+            var mtime = backend.getFileMTime(filePath);
             var etag = '"' + Std.string(mtime) + '"';
             res.header("ETag", etag);
 
@@ -158,16 +219,100 @@ class Static {
         // Check if this is a binary file type
         if (isBinaryContent(contentType)) {
             // Read and send binary content
-            var content = server.backend.readBinaryFile(filePath);
+            var content = backend.readBinaryFile(filePath);
             res.binary(content);
         } else {
             // Read and send text content
-            var content = server.backend.readFile(filePath);
+            var content = backend.readFile(filePath);
             res.text(content);
         }
 
         @:privateAccess req.routeResolved = true;
         return true;
+    }
+
+    function tryServeFileAsync(filePath:String, req:Request, res:Response, backend:AsyncFileBackend,
+                                callback:(served:Bool)->Void):Void {
+        backend.fileExistsAsync(filePath, (exists) -> {
+            if (!exists) {
+                callback(false);
+                return;
+            }
+
+            backend.isDirectoryAsync(filePath, (isDir) -> {
+                if (isDir) {
+                    callback(false);
+                    return;
+                }
+
+                // Get file extension and determine content type
+                var ext = Path.extension(filePath).toLowerCase();
+                var contentType = MimeTypes.getContentType(ext);
+
+                // Set content type header
+                res.header("Content-Type", contentType);
+
+                // Set cache control
+                if (options.maxAge > 0) {
+                    res.header("Cache-Control", "public, max-age=" + options.maxAge);
+                } else {
+                    res.header("Cache-Control", "no-cache");
+                }
+
+                // Handle ETag if enabled
+                if (options.etag) {
+                    backend.getFileMTimeAsync(filePath, (err, mtime) -> {
+                        if (err == null) {
+                            var etag = '"' + Std.string(mtime) + '"';
+                            res.header("ETag", etag);
+
+                            // Check If-None-Match header for conditional requests
+                            var ifNoneMatch = req.headers.get("If-None-Match");
+                            if (ifNoneMatch == etag) {
+                                res.status(304).text("");
+                                @:privateAccess req.routeResolved = true;
+                                callback(true);
+                                return;
+                            }
+                        }
+
+                        // Serve the file content
+                        serveFileContentAsync(filePath, res, req, backend, contentType, callback);
+                    });
+                } else {
+                    // Serve without ETag
+                    serveFileContentAsync(filePath, res, req, backend, contentType, callback);
+                }
+            });
+        });
+    }
+
+    function serveFileContentAsync(filePath:String, res:Response, req:Request, backend:AsyncFileBackend,
+                                    contentType:String, callback:(served:Bool)->Void):Void {
+        // Check if this is a binary file type
+        if (isBinaryContent(contentType)) {
+            // Read and send binary content
+            backend.readBinaryFileAsync(filePath, (err, content) -> {
+                if (err != null) {
+                    callback(false);
+                } else {
+                    res.binary(content);
+                    @:privateAccess req.routeResolved = true;
+                    callback(true);
+                }
+            });
+        } else {
+            // Read and send text content
+            backend.readFileAsync(filePath, (err, content) -> {
+                if (err != null) {
+                    callback(false);
+                } else {
+                    res.text(content);
+                    @:privateAccess req.routeResolved = true;
+                    callback(true);
+                }
+            });
+        }
     }
 
     function isBinaryContent(contentType:String):Bool {

@@ -9,7 +9,7 @@ import php.Syntax;
 
 using StringTools;
 
-class PhpBackend implements Backend {
+class PhpBackend implements Backend implements SyncFileBackend {
 
     public function new() {}
 

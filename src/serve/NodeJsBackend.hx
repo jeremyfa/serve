@@ -15,7 +15,7 @@ import js.node.url.URL;
 
 using StringTools;
 
-class NodeJsBackend implements Backend {
+class NodeJsBackend implements Backend implements AsyncFileBackend {
 
     var nodeServer:NodeServer;
     var serverHost:String = "localhost";
@@ -189,30 +189,44 @@ class NodeJsBackend implements Backend {
         nodeRes.end(buffer);
     }
 
-    public function fileExists(path:String):Bool {
-        return Fs.existsSync(path);
+    public function fileExistsAsync(path:String, callback:(exists:Bool)->Void):Void {
+        Fs.access(path, (err) -> {
+            callback(err == null);
+        });
     }
 
-    public function isDirectory(path:String):Bool {
-        try {
-            var stats = Fs.statSync(path);
-            return stats.isDirectory();
-        } catch (e:Dynamic) {
-            return false;
-        }
+    public function isDirectoryAsync(path:String, callback:(isDir:Bool)->Void):Void {
+        Fs.stat(path, (err, stats) -> {
+            if (err != null) {
+                callback(false);
+            } else {
+                callback(stats.isDirectory());
+            }
+        });
     }
 
-    public function readFile(path:String):String {
-        return Fs.readFileSync(path, {encoding: 'utf8'});
+    public function readFileAsync(path:String, callback:(error:Dynamic, content:String)->Void):Void {
+        Fs.readFile(path, {encoding: 'utf8'}, callback);
     }
 
-    public function readBinaryFile(path:String):Bytes {
-        return Fs.readFileSync(path).hxToBytes();
+    public function readBinaryFileAsync(path:String, callback:(error:Dynamic, content:Bytes)->Void):Void {
+        Fs.readFile(path, (err, buffer) -> {
+            if (err != null) {
+                callback(err, null);
+            } else {
+                callback(null, buffer.hxToBytes());
+            }
+        });
     }
 
-    public function getFileMTime(path:String):Float {
-        var stats = Fs.statSync(path);
-        return stats.mtime.getTime();
+    public function getFileMTimeAsync(path:String, callback:(error:Dynamic, mtime:Float)->Void):Void {
+        Fs.stat(path, (err, stats) -> {
+            if (err != null) {
+                callback(err, 0);
+            } else {
+                callback(null, stats.mtime.getTime());
+            }
+        });
     }
 
 }
