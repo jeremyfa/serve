@@ -51,6 +51,10 @@ class Server {
         _addRouter(router);
     }
 
+    public extern inline overload function add(staticHandler:Static):Void {
+        _addStatic(staticHandler);
+    }
+
     public extern inline overload function add(handleRequest:(req:Request, res:Response)->Void):Void {
         _addRequestHandler(handleRequest);
     }
@@ -62,6 +66,16 @@ class Server {
         }
         else if (router.server != this) {
             throw 'Cannot assign a router to multiple server instances';
+        }
+    }
+
+    function _addStatic(staticHandler:Static):Void {
+        if (staticHandler.server == null) {
+            @:privateAccess staticHandler.server = this;
+            requestHandlers.push(staticHandler.handleRequest);
+        }
+        else if (staticHandler.server != this) {
+            throw 'Cannot assign a static handler to multiple server instances';
         }
     }
 

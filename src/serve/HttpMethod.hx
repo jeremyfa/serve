@@ -10,12 +10,15 @@ enum abstract HttpMethod(Int) from Int to Int {
 
     var DELETE = 4;
 
+    var HEAD = 5;
+
     public function toString() {
         return switch abstract {
             case GET: 'GET';
             case POST: 'POST';
             case PUT: 'PUT';
             case DELETE: 'DELETE';
+            case HEAD: 'HEAD';
         }
     }
 

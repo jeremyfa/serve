@@ -1,6 +1,9 @@
 package serve;
 
 import haxe.Json;
+import haxe.io.Bytes;
+
+using StringTools;
 
 @:structInit
 class Response {
@@ -49,6 +52,11 @@ class Response {
         return this;
     }
 
+    public function binary(data:Bytes):Response {
+        server.backend.responseBinary(this, data);
+        return this;
+    }
+
     public function redirect(location:String):Void {
         status(302);
         header('Location', location);
@@ -65,6 +73,49 @@ class Response {
 
         callback(next);
         return this;
+    }
+
+    public function sendFile(filePath:String):Response {
+        if (!server.backend.fileExists(filePath)) {
+            return notFound();
+        }
+
+        if (server.backend.isDirectory(filePath)) {
+            return notFound();
+        }
+
+        // Get file extension and determine content type
+        var ext = haxe.io.Path.extension(filePath).toLowerCase();
+        var contentType = MimeTypes.getContentType(ext);
+
+        // Set content type header
+        header('Content-Type', contentType);
+
+        // Check if this is a binary file type
+        if (isBinaryContent(contentType)) {
+            // Read and send binary content
+            var content = server.backend.readBinaryFile(filePath);
+            binary(content);
+        } else {
+            // Read and send text content
+            var content = server.backend.readFile(filePath);
+            text(content);
+        }
+
+        return this;
+    }
+
+    function isBinaryContent(contentType:String):Bool {
+        // Text-based content types
+        if (contentType.startsWith("text/")) return false;
+        if (contentType == "application/json") return false;
+        if (contentType == "application/javascript") return false;
+        if (contentType == "application/xml") return false;
+        if (contentType.endsWith("+xml")) return false;
+        if (contentType.endsWith("+json")) return false;
+
+        // Everything else is considered binary
+        return true;
     }
 
 }

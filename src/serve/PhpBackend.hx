@@ -3,6 +3,7 @@ package serve;
 #if php
 
 import haxe.Json;
+import haxe.io.Bytes;
 import php.NativeArray;
 import php.Syntax;
 
@@ -47,7 +48,15 @@ class PhpBackend implements Backend {
         // Request uri
         var uri:String = Syntax.code("$_SERVER[\"REQUEST_URI\"]").split('?')[0];
 
-        // Remove trailing slash
+        // Normalize URI: ensure it starts with / and is properly formatted
+        if (!uri.startsWith('/')) {
+            uri = '/' + uri;
+        }
+
+        // Normalize path to resolve . and .. segments
+        uri = haxe.io.Path.normalize(uri);
+
+        // Remove trailing slash (except for root)
         if (uri.length >= 2 && uri.endsWith('/')) {
             uri = uri.substring(0, uri.length - 1);
         }
@@ -57,6 +66,7 @@ class PhpBackend implements Backend {
             case "POST": POST;
             case "PUT": PUT;
             case "DELETE": DELETE;
+            case "HEAD": HEAD;
             case _: GET;
         }
 
@@ -97,6 +107,32 @@ class PhpBackend implements Backend {
 
     public function responseText(response:Response, text:String):Void {
         Syntax.code('echo {0}', text);
+    }
+
+    public function responseBinary(response:Response, data:Bytes):Void {
+        // PHP echo can handle binary data directly
+        Syntax.code('echo {0}', data.toString());
+    }
+
+    public function fileExists(path:String):Bool {
+        return Syntax.code('file_exists({0})', path);
+    }
+
+    public function isDirectory(path:String):Bool {
+        return Syntax.code('is_dir({0})', path);
+    }
+
+    public function readFile(path:String):String {
+        return Syntax.code('file_get_contents({0})', path);
+    }
+
+    public function readBinaryFile(path:String):Bytes {
+        var content:String = Syntax.code('file_get_contents({0})', path);
+        return Bytes.ofString(content);
+    }
+
+    public function getFileMTime(path:String):Float {
+        return Syntax.code('filemtime({0})', path);
     }
 
 }

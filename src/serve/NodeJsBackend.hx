@@ -5,6 +5,7 @@ package serve;
 import haxe.Json;
 import haxe.io.Bytes;
 import js.node.Buffer;
+import js.node.Fs;
 import js.node.Http;
 import js.node.Querystring;
 import js.node.http.IncomingMessage;
@@ -45,7 +46,15 @@ class NodeJsBackend implements Backend {
         final parsedUrl = new URL(fullUrl);
         var uri = parsedUrl.pathname;
 
-        // Remove trailing slash
+        // Normalize URI: ensure it starts with / and is properly formatted
+        if (!uri.startsWith('/')) {
+            uri = '/' + uri;
+        }
+
+        // Normalize path to resolve . and .. segments
+        uri = haxe.io.Path.normalize(uri);
+
+        // Remove trailing slash (except for root)
         if (uri.length >= 2 && uri.endsWith('/')) {
             uri = uri.substring(0, uri.length - 1);
         }
@@ -72,6 +81,7 @@ class NodeJsBackend implements Backend {
             case "POST": POST;
             case "PUT": PUT;
             case "DELETE": DELETE;
+            case "HEAD": HEAD;
             case _: GET;
         }
 
@@ -170,6 +180,39 @@ class NodeJsBackend implements Backend {
     public function responseText(response:Response, text:String):Void {
         var nodeRes:ServerResponse = cast response.backendItem;
         nodeRes.end(text);
+    }
+
+    public function responseBinary(response:Response, data:Bytes):Void {
+        var nodeRes:ServerResponse = cast response.backendItem;
+        // Convert Bytes to Buffer and send
+        var buffer = Buffer.from(data.getData());
+        nodeRes.end(buffer);
+    }
+
+    public function fileExists(path:String):Bool {
+        return Fs.existsSync(path);
+    }
+
+    public function isDirectory(path:String):Bool {
+        try {
+            var stats = Fs.statSync(path);
+            return stats.isDirectory();
+        } catch (e:Dynamic) {
+            return false;
+        }
+    }
+
+    public function readFile(path:String):String {
+        return Fs.readFileSync(path, {encoding: 'utf8'});
+    }
+
+    public function readBinaryFile(path:String):Bytes {
+        return Fs.readFileSync(path).hxToBytes();
+    }
+
+    public function getFileMTime(path:String):Float {
+        var stats = Fs.statSync(path);
+        return stats.mtime.getTime();
     }
 
 }
