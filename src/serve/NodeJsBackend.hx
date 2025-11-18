@@ -136,10 +136,7 @@ class NodeJsBackend implements Backend {
             };
 
             // Create response object
-            final res:Response = {
-                server: server,
-                backendItem: nodeRes
-            };
+            final res:Response = new Response(server, req, nodeRes);
 
             // Handle the request
             server.handleRequest(req, res);

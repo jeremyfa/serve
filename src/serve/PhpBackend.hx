@@ -72,9 +72,7 @@ class PhpBackend implements Backend {
         };
 
         // Initial response object
-        final res:Response = {
-            server: server
-        };
+        final res:Response = new Response(server, req);
 
         // Handle request
         server.handleRequest(req, res);

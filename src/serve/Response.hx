@@ -9,8 +9,11 @@ class Response {
 
     public var server(default, null):Server;
 
-    public function new(server:Server, ?backendItem:Any) {
+    public var request:Request;
+
+    public function new(server:Server, request:Request, ?backendItem:Any) {
         this.server = server;
+        this.request = request;
         this.backendItem = backendItem;
     }
 
@@ -50,6 +53,18 @@ class Response {
         status(302);
         header('Location', location);
         server.backend.responseText(this, '');
+    }
+
+    public function async(callback:(next:()->Void)->Void):Response {
+        @:privateAccess request.asyncPending = true;
+
+        final next = () -> {
+            @:privateAccess request.asyncPending = false;
+            @:privateAccess server.continueFromHandler(request, this, @:privateAccess request.nextHandlerIndex);
+        };
+
+        callback(next);
+        return this;
     }
 
 }

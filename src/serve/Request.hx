@@ -21,4 +21,8 @@ class Request {
 
     var routeResolved:Bool = false;
 
+    var asyncPending:Bool = false;
+
+    var nextHandlerIndex:Int = 0;
+
 }

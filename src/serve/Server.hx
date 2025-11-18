@@ -18,17 +18,33 @@ class Server {
     }
 
     public function handleRequest(req:Request, res:Response):Void {
+        continueFromHandler(req, res, 0);
+    }
 
-        for (i in 0...requestHandlers.length) {
+    function continueFromHandler(req:Request, res:Response, startIndex:Int):Void {
+        for (i in startIndex...requestHandlers.length) {
+            // If async was triggered, save where to continue from
+            if (@:privateAccess req.asyncPending) {
+                @:privateAccess req.nextHandlerIndex = i;
+                return; // Pause execution
+            }
+
             final handler = requestHandlers[i];
+
+            // Save next handler index in case async is called
+            @:privateAccess req.nextHandlerIndex = i + 1;
+
             handler(req, res);
+
             if (@:privateAccess req.routeResolved) {
                 return;
             }
         }
 
-        notFound(req, res);
-
+        // Only call notFound if we're not waiting for async
+        if (!@:privateAccess req.asyncPending) {
+            notFound(req, res);
+        }
     }
 
     public extern inline overload function add(router:Router):Void {
