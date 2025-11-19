@@ -14,4 +14,6 @@ interface SyncFileBackend {
 
     function getFileMTime(path:String):Float;
 
+    function getFileSize(path:String):Int;
+
 }

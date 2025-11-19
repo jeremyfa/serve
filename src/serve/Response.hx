@@ -8,13 +8,18 @@ using StringTools;
 @:structInit
 class Response {
 
+    public final id:Int;
+
     public var backendItem:Any;
 
     public var server(default, null):Server;
 
     public var request:Request;
 
+    static var _nextResponseId:Int = 0;
+
     public function new(server:Server, request:Request, ?backendItem:Any) {
+        this.id = _nextResponseId++;
         this.server = server;
         this.request = request;
         this.backendItem = backendItem;
@@ -22,6 +27,7 @@ class Response {
 
     public function status(status:Int):Response {
         server.backend.responseStatus(this, status);
+        @:privateAccess request.resolved = true;
         return this;
     }
 
@@ -39,21 +45,25 @@ class Response {
     public function html(html:String):Response {
         header('Content-Type', 'text/html');
         server.backend.responseText(this, html);
+        @:privateAccess request.resolved = true;
         return this;
     }
 
     public function notFound():Response {
         status(404).text('Not Found');
+        @:privateAccess request.resolved = true;
         return this;
     }
 
     public function text(text:String):Response {
         server.backend.responseText(this, text);
+        @:privateAccess request.resolved = true;
         return this;
     }
 
     public function binary(data:Bytes):Response {
         server.backend.responseBinary(this, data);
+        @:privateAccess request.resolved = true;
         return this;
     }
 
@@ -61,6 +71,7 @@ class Response {
         status(302);
         header('Location', location);
         server.backend.responseText(this, '');
+        @:privateAccess request.resolved = true;
     }
 
     public function async(callback:(next:()->Void)->Void):Response {

@@ -35,7 +35,9 @@ class NodeJsBackend implements Backend implements AsyncFileBackend {
 
         // Start listening
         nodeServer.listen(serverPort, serverHost, function() {
+            #if serve_debug
             trace('Server running at http://$serverHost:$serverPort/');
+            #end
         });
     }
 
@@ -225,6 +227,16 @@ class NodeJsBackend implements Backend implements AsyncFileBackend {
                 callback(err, 0);
             } else {
                 callback(null, stats.mtime.getTime());
+            }
+        });
+    }
+
+    public function getFileSizeAsync(path:String, callback:(error:Dynamic, size:Int)->Void):Void {
+        Fs.stat(path, (err, stats) -> {
+            if (err != null) {
+                callback(err, 0);
+            } else {
+                callback(null, Std.int(stats.size));
             }
         });
     }

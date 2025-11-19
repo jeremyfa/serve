@@ -14,4 +14,6 @@ interface AsyncFileBackend {
 
     function getFileMTimeAsync(path:String, callback:(error:Dynamic, mtime:Float)->Void):Void;
 
+    function getFileSizeAsync(path:String, callback:(error:Dynamic, size:Int)->Void):Void;
+
 }

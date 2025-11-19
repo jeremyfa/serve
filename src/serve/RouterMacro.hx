@@ -46,7 +46,7 @@ class RouterMacro {
                                     routing.add(' && ((matched_ = matchRoute(');
                                     routing.add(removeTrailingSlash(new Printer().printExpr(meta.params[0]).replace("$", ":")));
                                     routing.add(', req_.uri)) != null)) {\n');
-                                    routing.add('@:privateAccess req_.routeResolved = true;\n');
+                                    routing.add('@:privateAccess req_.resolved = true;\n');
                                     routing.add('@:privateAccess req_.params = matched_;\n');
                                     routing.add(field.name);
                                     routing.add('(req_, res_);\n');

@@ -1,0 +1,7 @@
+-cp src
+-cp test
+-main TestServer
+-js out/test-nodejs/test-server.js
+-lib hxnodejs
+-D serve_debug
+-D js-source-map

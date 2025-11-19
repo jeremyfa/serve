@@ -1,0 +1,6 @@
+-cp src
+-cp test
+-main TestServer
+-cpp out/test-cpp
+-lib hxcpp
+-D serve_debug

@@ -19,7 +19,7 @@ class Request {
 
     public var server(default, null):Server;
 
-    var routeResolved:Bool = false;
+    var resolved:Bool = false;
 
     var asyncPending:Bool = false;
 

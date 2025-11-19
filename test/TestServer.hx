@@ -1,29 +1,66 @@
 import serve.Request;
 import serve.Response;
 import serve.Router;
+import serve.Server;
+import serve.Static;
 
-class App extends Router {
+#if php
+import serve.PhpBackend;
+#elseif js
+import serve.NodeJsBackend;
+#elseif cpp
+import serve.CppBackend;
+#end
 
-    @get('/api/test') function apiTest(req:Request, res:Response) {
+class TestServer extends Router {
+    static function main() {
+        #if php
+        final backend = new PhpBackend();
+        #elseif js
+        final backend = new NodeJsBackend(3000);
+        #elseif cpp
+        final backend = new CppBackend(8080, "127.0.0.1");
+        #end
 
+        final server = new Server(backend);
+
+        // Add API routes
+        server.add(new TestServer());
+
+        // Add static file serving from test/assets
+        server.add(new Static('/', '../../test/assets', {
+            index: 'test.html',
+            maxAge: 3600,
+            etag: true,
+            dotfiles: 'ignore',
+            extensions: ['html', 'htm', 'png', 'jpg', 'jpeg', 'gif']
+        }));
+
+        #if !php
+        trace('Test server started on ${server.host}:${server.port}');
+        #end
+        server.start();
+    }
+
+    @get('/api/test')
+    function apiTest(req:Request, res:Response) {
         res.json({
             message: 'This is a dynamic API endpoint',
             timestamp: Date.now().getTime()
         });
-
     }
 
-    @get('/api/users/$id') function getUser(req:Request, res:Response) {
-
+    @get('/api/users/$id')
+    function getUser(req:Request, res:Response) {
         res.json({
             id: req.params.id,
             name: 'User ' + req.params.id,
             email: 'user' + req.params.id + '@example.com'
         });
-
     }
 
-    @post('/api/users') function createUser(req:Request, res:Response) {
+    @post('/api/users')
+    function createUser(req:Request, res:Response) {
         // Parse the request body (assuming JSON)
         var body = req.body;
 
@@ -46,7 +83,8 @@ class App extends Router {
         });
     }
 
-    @put('/api/users/$id') function updateUser(req:Request, res:Response) {
+    @put('/api/users/$id')
+    function updateUser(req:Request, res:Response) {
         var userId = req.params.id;
         var body = req.body;
 
@@ -66,7 +104,8 @@ class App extends Router {
         });
     }
 
-    @delete('/api/users/$id') function deleteUser(req:Request, res:Response) {
+    @delete('/api/users/$id')
+    function deleteUser(req:Request, res:Response) {
         var userId = req.params.id;
 
         // Simulate user deletion
@@ -76,5 +115,4 @@ class App extends Router {
             timestamp: Date.now().toString()
         });
     }
-
 }

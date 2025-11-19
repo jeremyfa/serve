@@ -135,6 +135,10 @@ class PhpBackend implements Backend implements SyncFileBackend {
         return Syntax.code('filemtime({0})', path);
     }
 
+    public function getFileSize(path:String):Int {
+        return Syntax.code('filesize({0})', path);
+    }
+
 }
 
 #end

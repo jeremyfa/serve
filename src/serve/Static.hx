@@ -1,7 +1,7 @@
 package serve;
 
-import haxe.io.Path;
 import haxe.io.Bytes;
+import haxe.io.Path;
 
 using StringTools;
 
@@ -85,7 +85,6 @@ class Static {
             if (filename.charAt(0) == ".") {
                 if (options.dotfiles == "deny") {
                     res.status(403).text("Forbidden");
-                    @:privateAccess req.routeResolved = true;
                     return;
                 } else { // ignore
                     return; // Let next handler deal with it
@@ -137,7 +136,8 @@ class Static {
         res.async(next -> {
             tryServeFileAsync(filePath, req, res, asyncBackend, (served) -> {
                 if (served) {
-                    // File was served successfully
+                    // File was served successfully, call next to complete
+                    next();
                     return;
                 }
 
@@ -147,7 +147,10 @@ class Static {
                         // Try serving index file
                         var indexPath = Path.join([filePath, options.index]);
                         tryServeFileAsync(indexPath, req, res, asyncBackend, (served) -> {
-                            if (!served) {
+                            if (served) {
+                                // Index file served, call next
+                                next();
+                            } else {
                                 // Index not found, try extensions
                                 tryExtensionsAsync(filePath, req, res, asyncBackend, 0, next);
                             }
@@ -161,8 +164,7 @@ class Static {
         });
     }
 
-    function tryExtensionsAsync(filePath:String, req:Request, res:Response, backend:AsyncFileBackend,
-                                 index:Int, next:()->Void):Void {
+    function tryExtensionsAsync(filePath:String, req:Request, res:Response, backend:AsyncFileBackend, index:Int, next:()->Void):Void {
         if (index >= options.extensions.length) {
             // No more extensions to try
             next(); // Continue to next handler
@@ -171,7 +173,10 @@ class Static {
 
         var extPath = filePath + "." + options.extensions[index];
         tryServeFileAsync(extPath, req, res, backend, (served) -> {
-            if (!served) {
+            if (served) {
+                // File served successfully with extension
+                next();
+            } else {
                 // Try next extension
                 tryExtensionsAsync(filePath, req, res, backend, index + 1, next);
             }
@@ -211,23 +216,29 @@ class Static {
             var ifNoneMatch = req.headers.get("If-None-Match");
             if (ifNoneMatch == etag) {
                 res.status(304).text("");
-                @:privateAccess req.routeResolved = true;
                 return true;
             }
         }
 
-        // Check if this is a binary file type
-        if (isBinaryContent(contentType)) {
-            // Read and send binary content
-            var content = backend.readBinaryFile(filePath);
-            res.binary(content);
+        // For HEAD requests, only send headers, not the body
+        if (req.method == HEAD) {
+            // Get file size for Content-Length header
+            var fileSize = backend.getFileSize(filePath);
+            res.header("Content-Length", Std.string(fileSize));
+            res.text(""); // Send empty body for HEAD requests
         } else {
-            // Read and send text content
-            var content = backend.readFile(filePath);
-            res.text(content);
+            // Check if this is a binary file type
+            if (isBinaryContent(contentType)) {
+                // Read and send binary content
+                var content = backend.readBinaryFile(filePath);
+                res.binary(content);
+            } else {
+                // Read and send text content
+                var content = backend.readFile(filePath);
+                res.text(content);
+            }
         }
 
-        @:privateAccess req.routeResolved = true;
         return true;
     }
 
@@ -270,7 +281,6 @@ class Static {
                             var ifNoneMatch = req.headers.get("If-None-Match");
                             if (ifNoneMatch == etag) {
                                 res.status(304).text("");
-                                @:privateAccess req.routeResolved = true;
                                 callback(true);
                                 return;
                             }
@@ -287,31 +297,42 @@ class Static {
         });
     }
 
-    function serveFileContentAsync(filePath:String, res:Response, req:Request, backend:AsyncFileBackend,
-                                    contentType:String, callback:(served:Bool)->Void):Void {
-        // Check if this is a binary file type
-        if (isBinaryContent(contentType)) {
-            // Read and send binary content
-            backend.readBinaryFileAsync(filePath, (err, content) -> {
+    function serveFileContentAsync(filePath:String, res:Response, req:Request, backend:AsyncFileBackend, contentType:String, callback:(served:Bool)->Void):Void {
+        // For HEAD requests, only send headers, not the body
+        if (req.method == HEAD) {
+            // Get file size for Content-Length header
+            backend.getFileSizeAsync(filePath, (err, size) -> {
                 if (err != null) {
                     callback(false);
                 } else {
-                    res.binary(content);
-                    @:privateAccess req.routeResolved = true;
+                    res.header("Content-Length", Std.string(size));
+                    res.text(""); // Send empty body for HEAD requests
                     callback(true);
                 }
             });
         } else {
-            // Read and send text content
-            backend.readFileAsync(filePath, (err, content) -> {
-                if (err != null) {
-                    callback(false);
-                } else {
-                    res.text(content);
-                    @:privateAccess req.routeResolved = true;
-                    callback(true);
-                }
-            });
+            // Check if this is a binary file type
+            if (isBinaryContent(contentType)) {
+                // Read and send binary content
+                backend.readBinaryFileAsync(filePath, (err, content) -> {
+                    if (err != null) {
+                        callback(false);
+                    } else {
+                        res.binary(content);
+                        callback(true);
+                    }
+                });
+            } else {
+                // Read and send text content
+                backend.readFileAsync(filePath, (err, content) -> {
+                    if (err != null) {
+                        callback(false);
+                    } else {
+                        res.text(content);
+                        callback(true);
+                    }
+                });
+            }
         }
     }
 

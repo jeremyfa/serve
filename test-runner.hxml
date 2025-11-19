@@ -1,0 +1,4 @@
+-cp test
+-main TestRunner
+-js out/test-runner.js
+-lib hxnodejs

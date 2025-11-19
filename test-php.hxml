@@ -1,0 +1,5 @@
+-cp src
+-cp test
+-main TestServer
+-php out/test-php
+-D serve_debug

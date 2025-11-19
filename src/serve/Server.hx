@@ -22,6 +22,11 @@ class Server {
     }
 
     function continueFromHandler(req:Request, res:Response, startIndex:Int):Void {
+
+        if (@:privateAccess req.resolved) {
+            return;
+        }
+
         for (i in startIndex...requestHandlers.length) {
             // If async was triggered, save where to continue from
             if (@:privateAccess req.asyncPending) {
@@ -36,7 +41,7 @@ class Server {
 
             handler(req, res);
 
-            if (@:privateAccess req.routeResolved) {
+            if (@:privateAccess req.resolved) {
                 return;
             }
         }
