@@ -1,5 +1,7 @@
 package serve;
 
+using StringTools;
+
 class Utils {
 
     public static function normalizeHeaderName(name:String):String {
@@ -121,6 +123,38 @@ class Utils {
 
         return result ?? {};
 
+    }
+
+    public static function parseQueryString(qs:String):Dynamic {
+        var result:Dynamic = {};
+        var pairs = qs.split("&");
+        for (pair in pairs) {
+            var kv = pair.split("=");
+            if (kv.length == 2) {
+                var key = StringTools.urlDecode(kv[0]);
+                if (key.endsWith('[]')) {
+                    key = key.substring(0, key.length - 2);
+                    var arrayValue:Array<Dynamic> = Reflect.field(result, key);
+                    if (arrayValue == null) {
+                        arrayValue = [StringTools.urlDecode(kv[1])];
+                        Reflect.setField(result,
+                            key,
+                            arrayValue
+                        );
+                    }
+                    else {
+                        arrayValue.push(StringTools.urlDecode(kv[1]));
+                    }
+                }
+                else {
+                    Reflect.setField(result,
+                        key,
+                        StringTools.urlDecode(kv[1])
+                    );
+                }
+            }
+        }
+        return result;
     }
 
 }

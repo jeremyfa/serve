@@ -1,6 +1,7 @@
 package serve;
 
 @:structInit
+@:allow(serve.Server)
 class Request {
 
     public var uri:String;
@@ -23,6 +24,6 @@ class Request {
 
     var asyncPending:Bool = false;
 
-    var nextHandlerIndex:Int = 0;
+    var handlerIndex:Int = -1;
 
 }

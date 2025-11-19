@@ -50,6 +50,7 @@ class RouterMacro {
                                     routing.add('@:privateAccess req_.params = matched_;\n');
                                     routing.add(field.name);
                                     routing.add('(req_, res_);\n');
+                                    routing.add('return;\n');  // Return immediately after handling the route
                                     routing.add('}\n');
                                     numRoutes++;
 

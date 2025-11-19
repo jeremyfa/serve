@@ -77,4 +77,15 @@ class App extends Router {
         });
     }
 
+    @get('/api/test-array') function testArray(req:Request, res:Response) {
+        // Test endpoint for array parameter handling
+        // Example: /api/test-array?name[]=jim&name[]=jam&tag=test
+        res.json({
+            query: req.query,
+            // Show specific fields to validate array handling
+            names: req.query.name,
+            tag: req.query.tag
+        });
+    }
+
 }

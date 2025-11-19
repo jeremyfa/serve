@@ -59,7 +59,7 @@ kill $NODE_PID 2>/dev/null || true
 echo ""
 
 # Test C++ backend
-echo "Starting C++ test server on port 8080..."
+echo "Starting C++ test server on port 3002..."
 cd out/test-cpp
 ./TestServer > /dev/null 2>&1 &
 CPP_PID=$!
@@ -67,7 +67,7 @@ cd ../..
 sleep 2
 
 echo "Running tests on C++ backend..."
-node out/test-runner.js cpp 8080
+node out/test-runner.js cpp 3002
 if [ $? -ne 0 ]; then
     FAILED=1
 fi

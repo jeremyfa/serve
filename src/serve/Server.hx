@@ -18,38 +18,35 @@ class Server {
     }
 
     public function handleRequest(req:Request, res:Response):Void {
-        continueFromHandler(req, res, 0);
+        continueFromHandler(req, res);
     }
 
-    function continueFromHandler(req:Request, res:Response, startIndex:Int):Void {
+    function continueFromHandler(req:Request, res:Response):Void {
 
-        if (@:privateAccess req.resolved) {
-            return;
-        }
+        // Stop here if this request is already resolved
+        // or is running an async operation
+        if (req.resolved || req.asyncPending) return;
 
-        for (i in startIndex...requestHandlers.length) {
-            // If async was triggered, save where to continue from
-            if (@:privateAccess req.asyncPending) {
-                @:privateAccess req.nextHandlerIndex = i;
-                return; // Pause execution
-            }
+        // All good, let's move to next handler
+        req.handlerIndex++;
+        while (req.handlerIndex < requestHandlers.length) {
+            final handler = requestHandlers[req.handlerIndex];
 
-            final handler = requestHandlers[i];
-
-            // Save next handler index in case async is called
-            @:privateAccess req.nextHandlerIndex = i + 1;
-
+            // Run the handler
             handler(req, res);
 
-            if (@:privateAccess req.resolved) {
-                return;
-            }
+            // After running the handler, if it is
+            // either resolved or initiated an async operation,
+            // stop there.
+            if (req.resolved || req.asyncPending) return;
+
+            // We can move to next handler
+            req.handlerIndex++;
         }
 
-        // Only call notFound if we're not waiting for async
-        if (!@:privateAccess req.asyncPending) {
-            notFound(req, res);
-        }
+        // Nothing resolved, no async pending: not found!
+        notFound(req, res);
+
     }
 
     public extern inline overload function add(router:Router):Void {

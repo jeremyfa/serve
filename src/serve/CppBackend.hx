@@ -79,11 +79,16 @@ class CppBackend implements Backend implements AsyncFileBackend {
     public function start(server:Server):Void {
         // Setup server socket
         serverSocket = new Socket();
-        serverSocket.bind(new Host(serverHost), serverPort);
+
+        // Listen on all interfaces (0.0.0.0) instead of just localhost
+        // This ensures compatibility with clients that might use 127.0.0.1 or localhost
+        var listenHost = serverHost; //(serverHost == "localhost" || serverHost == "127.0.0.1") ? "0.0.0.0" : serverHost;
+        serverSocket.bind(new Host(listenHost), serverPort);
         serverSocket.listen(10);
 
         #if serve_debug
-        trace('C++ Server listening on $serverHost:$serverPort');
+        trace('C++ Server listening on $serverHost:$serverPort' +
+              (listenHost != serverHost ? ' (binding to $listenHost:$serverPort)' : ''));
         #end
 
         // Start accept thread for handling connections
@@ -310,7 +315,7 @@ class CppBackend implements Backend implements AsyncFileBackend {
             // Parse query parameters
             var query:Dynamic = {};
             if (pending.queryString != null && pending.queryString != "") {
-                query = parseQueryString(pending.queryString);
+                query = Utils.parseQueryString(pending.queryString);
             }
 
             // Create Request object
@@ -496,7 +501,7 @@ class CppBackend implements Backend implements AsyncFileBackend {
                             body = {};
                         }
                     } else if (contentType == "application/x-www-form-urlencoded") {
-                        body = parseQueryString(bodyStr);
+                        body = Utils.parseQueryString(bodyStr);
                     } else {
                         body = bodyStr;
                     }
@@ -592,20 +597,6 @@ class CppBackend implements Backend implements AsyncFileBackend {
             case "HEAD": HEAD;
             default: GET;
         };
-    }
-
-    function parseQueryString(qs:String):Dynamic {
-        var result:Dynamic = {};
-        var pairs = qs.split("&");
-        for (pair in pairs) {
-            var kv = pair.split("=");
-            if (kv.length == 2) {
-                Reflect.setField(result,
-                    StringTools.urlDecode(kv[0]),
-                    StringTools.urlDecode(kv[1]));
-            }
-        }
-        return result;
     }
 
     function getStatusText(status:Int):String {

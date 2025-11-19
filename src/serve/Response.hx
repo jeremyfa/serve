@@ -12,6 +12,8 @@ class Response {
 
     public var backendItem:Any;
 
+    public var sent(default, null):Bool;
+
     public var server(default, null):Server;
 
     public var request:Request;
@@ -20,6 +22,7 @@ class Response {
 
     public function new(server:Server, request:Request, ?backendItem:Any) {
         this.id = _nextResponseId++;
+        this.sent = false;
         this.server = server;
         this.request = request;
         this.backendItem = backendItem;
@@ -32,7 +35,14 @@ class Response {
     }
 
     public function header(name:String, value:String):Response {
+        if (sent) throw "Response already sent!";
+
         server.backend.responseHeader(this, name, value);
+        return this;
+    }
+
+    public function notFound():Response {
+        status(404).text('Not Found');
         return this;
     }
 
@@ -44,33 +54,40 @@ class Response {
 
     public function html(html:String):Response {
         header('Content-Type', 'text/html');
-        server.backend.responseText(this, html);
-        @:privateAccess request.resolved = true;
-        return this;
-    }
-
-    public function notFound():Response {
-        status(404).text('Not Found');
-        @:privateAccess request.resolved = true;
+        text(html);
         return this;
     }
 
     public function text(text:String):Response {
+        if (sent) throw "Response already sent!";
+
+        // Set Content-Length header for proper HTTP response
+        var bytes = haxe.io.Bytes.ofString(text);
+        header('Content-Length', Std.string(bytes.length));
         server.backend.responseText(this, text);
+        sent = true;
         @:privateAccess request.resolved = true;
         return this;
     }
 
     public function binary(data:Bytes):Response {
+        if (sent) throw "Response already sent!";
+
+        // Set Content-Length header for proper HTTP response
+        header('Content-Length', Std.string(data.length));
         server.backend.responseBinary(this, data);
+        sent = true;
         @:privateAccess request.resolved = true;
         return this;
     }
 
     public function redirect(location:String):Void {
+        if (sent) throw "Response already sent!";
+
         status(302);
         header('Location', location);
         server.backend.responseText(this, '');
+        sent = true;
         @:privateAccess request.resolved = true;
     }
 
@@ -79,66 +96,11 @@ class Response {
 
         final next = () -> {
             @:privateAccess request.asyncPending = false;
-            @:privateAccess server.continueFromHandler(request, this, @:privateAccess request.nextHandlerIndex);
+            @:privateAccess server.continueFromHandler(request, this);
         };
 
         callback(next);
         return this;
-    }
-
-    public function sendFile(filePath:String):Response {
-        // Check which type of backend we have
-        if (Std.isOfType(server.backend, SyncFileBackend)) {
-            var syncBackend:SyncFileBackend = cast server.backend;
-
-            if (!syncBackend.fileExists(filePath)) {
-                return notFound();
-            }
-
-            if (syncBackend.isDirectory(filePath)) {
-                return notFound();
-            }
-
-            // Get file extension and determine content type
-            var ext = haxe.io.Path.extension(filePath).toLowerCase();
-            var contentType = MimeTypes.getContentType(ext);
-
-            // Set content type header
-            header('Content-Type', contentType);
-
-            // Check if this is a binary file type
-            if (isBinaryContent(contentType)) {
-                // Read and send binary content
-                var content = syncBackend.readBinaryFile(filePath);
-                binary(content);
-            } else {
-                // Read and send text content
-                var content = syncBackend.readFile(filePath);
-                text(content);
-            }
-        } else if (Std.isOfType(server.backend, AsyncFileBackend)) {
-            // For async backend, we need to use async operations
-            // This is more complex and should ideally be handled through Static handler
-            // For now, throw an error to indicate async file operations should use Static
-            throw "sendFile() with async backend not implemented. Use Static handler for async file serving.";
-        } else {
-            return notFound();
-        }
-
-        return this;
-    }
-
-    function isBinaryContent(contentType:String):Bool {
-        // Text-based content types
-        if (contentType.startsWith("text/")) return false;
-        if (contentType == "application/json") return false;
-        if (contentType == "application/javascript") return false;
-        if (contentType == "application/xml") return false;
-        if (contentType.endsWith("+xml")) return false;
-        if (contentType.endsWith("+json")) return false;
-
-        // Everything else is considered binary
-        return true;
     }
 
 }

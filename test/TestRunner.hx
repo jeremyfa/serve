@@ -146,7 +146,8 @@ class TestRunner {
             testBinaryImage,
             testHeaders,
             test404,
-            testConcurrentRequests
+            testConcurrentRequests,
+            testArrayQueryParams
         ];
 
         function runNext(index:Int) {
@@ -487,5 +488,47 @@ class TestRunner {
                 }
             });
         }
+    }
+
+    static function testArrayQueryParams(host:String, port:Int, done:()->Void) {
+        Sys.println("\n" + BLUE + BOLD + "▶ Testing Array Query Parameters" + RESET);
+
+        // Test array parameters like name[]=jim&name[]=jam
+        httpGetString(host, port, "/api/test-array?name[]=jim&name[]=jam&tag=test", (content, status) -> {
+            try {
+                var json = haxe.Json.parse(content);
+
+                // Check that status is OK
+                test("Array query endpoint returns 200", status == 200);
+
+                // Check that names field is an array
+                var names = json.names;
+                test("name[] parameters parsed as array",
+                    Std.isOfType(names, Array),
+                    "Expected array, got: " + Type.typeof(names));
+
+                if (Std.isOfType(names, Array)) {
+                    var namesArray:Array<Dynamic> = cast names;
+                    test("Array contains 2 elements",
+                        namesArray.length == 2,
+                        "Got " + namesArray.length + " elements");
+                    test("First name is 'jim'",
+                        namesArray[0] == "jim",
+                        "Got: " + namesArray[0]);
+                    test("Second name is 'jam'",
+                        namesArray[1] == "jam",
+                        "Got: " + namesArray[1]);
+                }
+
+                // Check that regular parameter still works
+                test("Regular parameter 'tag' is 'test'",
+                    json.tag == "test",
+                    "Got: " + json.tag);
+
+            } catch (e:Dynamic) {
+                test("Array query parameter parsing", false, Std.string(e));
+            }
+            done();
+        });
     }
 }

@@ -19,7 +19,7 @@ class TestServer extends Router {
         #elseif js
         final backend = new NodeJsBackend(3000);
         #elseif cpp
-        final backend = new CppBackend(8080, "127.0.0.1");
+        final backend = new CppBackend(3002, "127.0.0.1");
         #end
 
         final server = new Server(backend);
@@ -113,6 +113,18 @@ class TestServer extends Router {
             success: true,
             deleted: userId,
             timestamp: Date.now().toString()
+        });
+    }
+
+    @get('/api/test-array')
+    function testArray(req:Request, res:Response) {
+        // Test endpoint for array parameter handling
+        // Example: /api/test-array?name[]=jim&name[]=jam&tag=test
+        res.json({
+            query: req.query,
+            // Show specific fields to validate array handling
+            names: req.query.name,
+            tag: req.query.tag
         });
     }
 }

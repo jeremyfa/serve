@@ -7,7 +7,6 @@ import haxe.io.Bytes;
 import js.node.Buffer;
 import js.node.Fs;
 import js.node.Http;
-import js.node.Querystring;
 import js.node.http.IncomingMessage;
 import js.node.http.Server as NodeServer;
 import js.node.http.ServerResponse;
@@ -33,10 +32,32 @@ class NodeJsBackend implements Backend implements AsyncFileBackend {
             handleNodeRequest(req, res, server);
         });
 
+        #if serve_debug
+        // Add error and connection event handlers for debugging
+        nodeServer.on('connection', function(socket:Dynamic) {
+            trace('New connection from: ${socket.remoteAddress}:${socket.remotePort}');
+
+            socket.on('error', function(err:Dynamic):Void {
+                trace('Socket error: $err');
+            });
+
+            socket.on('close', function():Void {
+                trace('Socket closed');
+            });
+        });
+        #end
+
+        nodeServer.on('error', function(err:Dynamic) {
+            trace('Server error: $err');
+        });
+
         // Start listening
-        nodeServer.listen(serverPort, serverHost, function() {
+        // Listen on all interfaces (0.0.0.0) instead of just localhost
+        // This ensures compatibility with clients that might use 127.0.0.1 or localhost
+        var listenHost = (serverHost == "localhost" || serverHost == "127.0.0.1") ? "0.0.0.0" : serverHost;
+        nodeServer.listen(serverPort, listenHost, function() {
             #if serve_debug
-            trace('Server running at http://$serverHost:$serverPort/');
+            trace('Server running at http://$serverHost:$serverPort/ (listening on $listenHost:$serverPort)');
             #end
         });
     }
@@ -72,11 +93,21 @@ class NodeJsBackend implements Backend implements AsyncFileBackend {
             headers.set(Utils.normalizeHeaderName(key), Std.string(value));
         }
 
-        // Parse query parameters from URL searchParams
+        // Parse query parameters using custom parser for array support
         final query:Dynamic<String> = {};
-        parsedUrl.searchParams.forEach(function(value, key) {
-            Reflect.setField(query, key, value);
-        });
+        var queryString = parsedUrl.search;
+        if (queryString != null && queryString.length > 0) {
+            // Remove leading '?' if present
+            if (queryString.charAt(0) == '?') {
+                queryString = queryString.substring(1);
+            }
+            // Use Utils.parseQueryString to properly handle array notation
+            var parsedQuery = Utils.parseQueryString(queryString);
+            // Copy parsed fields to query object
+            for (field in Reflect.fields(parsedQuery)) {
+                Reflect.setField(query, field, Reflect.field(parsedQuery, field));
+            }
+        }
 
         // Parse method
         final method:HttpMethod = switch (nodeReq.method) {
@@ -120,11 +151,7 @@ class NodeJsBackend implements Backend implements AsyncFileBackend {
                     }
                     else if (contentType == 'application/x-www-form-urlencoded') {
                         // Parse URL-encoded form data
-                        body = {};
-                        var parsed = Querystring.parse(bodyData);
-                        for (key in Reflect.fields(parsed)) {
-                            Reflect.setField(body, key, Reflect.field(parsed, key));
-                        }
+                        body = Utils.parseQueryString(bodyData);
                     }
                     else {
                         // For other content types, leave body as empty object to match PHP backend behavior
@@ -155,7 +182,6 @@ class NodeJsBackend implements Backend implements AsyncFileBackend {
         });
 
         nodeReq.on('error', function(err) {
-            trace('Request error: $err');
             nodeRes.statusCode = 400;
             nodeRes.end('Bad Request');
         });
