@@ -5,21 +5,6 @@ import haxe.io.Bytes;
 
 using StringTools;
 
-@:allow(serve.Response)
-class ResponseData {
-
-    public var headers(default,null):Headers = new Headers();
-
-    public var status(default,null):Int = 0;
-
-    public var responseText(default,null):String = null;
-
-    public var responseBinary(default,null):Bytes = null;
-
-    public function new() {}
-
-}
-
 @:structInit
 class Response {
 
@@ -35,7 +20,7 @@ class Response {
 
     public var data(default,null):ResponseData = new ResponseData();
 
-    var completeHandlers:Array<(req:Request, res:Response)->Void> = null;
+    var completeHandlers:Array<(data:ResponseData)->Void> = null;
 
     static var _nextResponseId:Int = 0;
 
@@ -49,8 +34,6 @@ class Response {
 
     public function status(status:Int):Response {
         data.status = status;
-        server.backend.responseStatus(this, status);
-        @:privateAccess request.resolved = true;
         return this;
     }
 
@@ -116,7 +99,7 @@ class Response {
         return this;
     }
 
-    public function onComplete(handler:(req:Request, res:Response)->Void):Void {
+    public function onComplete(handler:(data:ResponseData)->Void):Void {
 
         if (completeHandlers == null) {
             completeHandlers = [];
@@ -133,12 +116,14 @@ class Response {
             completeHandlers = null;
             for (i in 0...handlers.length) {
                 final handler = handlers[i];
-                handler(request, this);
+                handler(data);
             }
         }
 
         complete = true;
         @:privateAccess request.resolved = true;
+
+        server.backend.responseStatus(this, data.status);
 
         for (name => value in data.headers) {
             server.backend.responseHeader(this, name, value);
