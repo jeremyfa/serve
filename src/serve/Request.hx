@@ -14,6 +14,8 @@ class Request {
 
     public var body:Dynamic;
 
+    public var rawBody:Dynamic;
+
     public var headers:Map<String,String>;
 
     public var backendItem:Any = null;

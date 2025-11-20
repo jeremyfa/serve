@@ -5,6 +5,21 @@ import haxe.io.Bytes;
 
 using StringTools;
 
+@:allow(serve.Response)
+class ResponseData {
+
+    public var headers(default,null):Headers = new Headers();
+
+    public var status(default,null):Int = 0;
+
+    public var responseText(default,null):String = null;
+
+    public var responseBinary(default,null):Bytes = null;
+
+    public function new() {}
+
+}
+
 @:structInit
 class Response {
 
@@ -12,32 +27,36 @@ class Response {
 
     public var backendItem:Any;
 
-    public var sent(default, null):Bool;
+    public var complete(default, null):Bool;
 
     public var server(default, null):Server;
 
     public var request:Request;
 
+    public var data(default,null):ResponseData = new ResponseData();
+
+    var completeHandlers:Array<(req:Request, res:Response)->Void> = null;
+
     static var _nextResponseId:Int = 0;
 
     public function new(server:Server, request:Request, ?backendItem:Any) {
         this.id = _nextResponseId++;
-        this.sent = false;
+        this.complete = false;
         this.server = server;
         this.request = request;
         this.backendItem = backendItem;
     }
 
     public function status(status:Int):Response {
+        data.status = status;
         server.backend.responseStatus(this, status);
         @:privateAccess request.resolved = true;
         return this;
     }
 
     public function header(name:String, value:String):Response {
-        if (sent) throw "Response already sent!";
-
-        server.backend.responseHeader(this, name, value);
+        if (complete) throw "Response already complete!";
+        data.headers.add(name, value);
         return this;
     }
 
@@ -59,35 +78,29 @@ class Response {
     }
 
     public function text(text:String):Response {
-        if (sent) throw "Response already sent!";
-
-        // Set Content-Length header for proper HTTP response
+        if (complete) throw "Response already complete!";
         var bytes = haxe.io.Bytes.ofString(text);
         header('Content-Length', Std.string(bytes.length));
-        server.backend.responseText(this, text);
-        sent = true;
-        @:privateAccess request.resolved = true;
+        data.responseText = text;
+        finish();
         return this;
     }
 
     public function binary(data:Bytes):Response {
-        if (sent) throw "Response already sent!";
-
-        // Set Content-Length header for proper HTTP response
+        if (complete) throw "Response already complete!";
         header('Content-Length', Std.string(data.length));
-        server.backend.responseBinary(this, data);
-        sent = true;
-        @:privateAccess request.resolved = true;
+        this.data.responseBinary = data;
+        finish();
         return this;
     }
 
     public function redirect(location:String):Void {
-        if (sent) throw "Response already sent!";
+        if (complete) throw "Response already complete!";
 
         status(302);
         header('Location', location);
-        server.backend.responseText(this, '');
-        sent = true;
+        data.responseText = '';
+        finish();
         @:privateAccess request.resolved = true;
     }
 
@@ -101,6 +114,44 @@ class Response {
 
         callback(next);
         return this;
+    }
+
+    public function onComplete(handler:(req:Request, res:Response)->Void):Void {
+
+        if (completeHandlers == null) {
+            completeHandlers = [];
+        }
+
+        completeHandlers.push(handler);
+
+    }
+
+    function finish():Void {
+
+        if (completeHandlers != null) {
+            final handlers = completeHandlers;
+            completeHandlers = null;
+            for (i in 0...handlers.length) {
+                final handler = handlers[i];
+                handler(request, this);
+            }
+        }
+
+        complete = true;
+        @:privateAccess request.resolved = true;
+
+        for (name => value in data.headers) {
+            server.backend.responseHeader(this, name, value);
+        }
+
+        if (data.responseBinary != null) {
+            server.backend.responseBinary(this, data.responseBinary);
+        }
+
+        if (data.responseText != null) {
+            server.backend.responseText(this, data.responseText);
+        }
+
     }
 
 }

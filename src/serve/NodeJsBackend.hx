@@ -170,6 +170,7 @@ class NodeJsBackend implements Backend implements AsyncFileBackend {
                 params: params,
                 query: query,
                 body: body,
+                rawBody: bodyData,
                 headers: headers,
                 backendItem: nodeReq
             };

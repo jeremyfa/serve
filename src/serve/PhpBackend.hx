@@ -34,9 +34,10 @@ class PhpBackend implements Backend implements SyncFileBackend {
         final contentType = headers.get('Content-Type').split(';')[0].rtrim();
 
         // Body parsing
+        var rawBody:Dynamic = Syntax.code("file_get_contents('php://input')");
         var body:Dynamic = null;
         if (contentType == 'application/json') {
-            body = Json.parse(Syntax.code("file_get_contents('php://input')"));
+            body = Json.parse(rawBody);
         }
         else {
             body = {};
@@ -78,6 +79,7 @@ class PhpBackend implements Backend implements SyncFileBackend {
             params: params,
             query: query,
             body: body,
+            rawBody: rawBody,
             headers: headers
         };
 

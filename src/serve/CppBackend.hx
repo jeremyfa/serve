@@ -15,28 +15,29 @@ import sys.thread.Thread;
 
 using StringTools;
 
-typedef PendingRequest = {
+typedef CppPendingRequest = {
     clientSocket: Socket,
     method: String,
     uri: String,
     headers: Map<String,String>,
     body: Dynamic,
+    rawBody: Dynamic,
     queryString: String,
     timestamp: Float
 }
 
-typedef ResponseData = {
+typedef CppResponseData = {
     status: Int,
     headers: Array<{name:String, value:String}>,
     content: StringBuf,
     binaryContent: Null<Bytes>  // Separate field for binary data
 }
 
-typedef AsyncCallback = {
+typedef CppAsyncCallback = {
     callback: ()->Void
 }
 
-enum FileOperation {
+enum CppFileOperation {
     FileExists(path:String, id:Int);
     IsDirectory(path:String, id:Int);
     ReadFile(path:String, id:Int);
@@ -45,8 +46,8 @@ enum FileOperation {
     GetFileSize(path:String, id:Int);
 }
 
-typedef FileJob = {
-    operation: FileOperation
+typedef CppFileJob = {
+    operation: CppFileOperation
 }
 
 class CppBackend implements Backend implements AsyncFileBackend {
@@ -56,9 +57,9 @@ class CppBackend implements Backend implements AsyncFileBackend {
     var serverSocket:Socket;
     var acceptThread:Thread;
     var fileIOThread:Thread;
-    var requestQueue:Deque<PendingRequest>;
-    var callbackQueue:Deque<AsyncCallback>;
-    var fileJobQueue:Deque<FileJob>;
+    var requestQueue:Deque<CppPendingRequest>;
+    var callbackQueue:Deque<CppAsyncCallback>;
+    var fileJobQueue:Deque<CppFileJob>;
     var activeRequests:Map<Socket, Float>; // Socket -> timestamp
     var pendingFileJobs:Map<Int, Dynamic>; // Job ID -> callback
     var nextJobId:Int = 0;
@@ -169,7 +170,7 @@ class CppBackend implements Backend implements AsyncFileBackend {
         #end
     }
 
-    function processFileJob(job:FileJob):Void {
+    function processFileJob(job:CppFileJob):Void {
         switch (job.operation) {
             case FileExists(path, id):
                 var exists = FileSystem.exists(path);
@@ -310,7 +311,7 @@ class CppBackend implements Backend implements AsyncFileBackend {
         }
     }
 
-    function processRequest(pending:PendingRequest, server:Server):Void {
+    function processRequest(pending:CppPendingRequest, server:Server):Void {
         try {
             // Parse query parameters
             var query:Dynamic = {};
@@ -326,12 +327,13 @@ class CppBackend implements Backend implements AsyncFileBackend {
                 params: {},
                 query: query,
                 body: pending.body,
+                rawBody: pending.rawBody,
                 headers: pending.headers,
                 backendItem: pending.clientSocket
             };
 
             // Create Response object with buffer for accumulating response
-            var responseData:ResponseData = {
+            var responseData:CppResponseData = {
                 status: 200,
                 headers: [],
                 content: new StringBuf(),
@@ -388,7 +390,7 @@ class CppBackend implements Backend implements AsyncFileBackend {
         }
     }
 
-    function parseHttpRequest(client:Socket):PendingRequest {
+    function parseHttpRequest(client:Socket):CppPendingRequest {
         try {
             var input = client.input;
 
@@ -481,12 +483,14 @@ class CppBackend implements Backend implements AsyncFileBackend {
 
             // Read body if present
             var body:Dynamic = null;
+            var rawBody:Dynamic = null;
             if (method == "POST" || method == "PUT") {
                 var contentLength = Std.parseInt(headers.get("Content-Length") ?? "0");
                 if (contentLength > 0) {
                     var bodyBytes = Bytes.alloc(contentLength);
                     input.readBytes(bodyBytes, 0, contentLength);
                     var bodyStr = bodyBytes.toString();
+                    rawBody = bodyStr;
 
                     var contentType = headers.get("Content-Type");
                     if (contentType != null) {
@@ -514,6 +518,7 @@ class CppBackend implements Backend implements AsyncFileBackend {
                 uri: uri,
                 headers: headers,
                 body: body,
+                rawBody: rawBody,
                 queryString: queryString,
                 timestamp: Sys.time()
             };
@@ -533,7 +538,7 @@ class CppBackend implements Backend implements AsyncFileBackend {
         }
     }
 
-    function sendResponse(client:Socket, responseData:ResponseData):Void {
+    function sendResponse(client:Socket, responseData:CppResponseData):Void {
         try {
             var output = client.output;
 
@@ -625,17 +630,17 @@ class CppBackend implements Backend implements AsyncFileBackend {
     }
 
     public function responseStatus(response:Response, status:Int):Void {
-        var responseData:ResponseData = cast response.backendItem;
+        var responseData:CppResponseData = cast response.backendItem;
         responseData.status = status;
     }
 
     public function responseHeader(response:Response, name:String, value:String):Void {
-        var responseData:ResponseData = cast response.backendItem;
+        var responseData:CppResponseData = cast response.backendItem;
         responseData.headers.push({name: name, value: value});
     }
 
     public function responseText(response:Response, text:String):Void {
-        var responseData:ResponseData = cast response.backendItem;
+        var responseData:CppResponseData = cast response.backendItem;
         responseData.content.add(text);
 
         // Get the client socket from the request
@@ -656,7 +661,7 @@ class CppBackend implements Backend implements AsyncFileBackend {
     }
 
     public function responseBinary(response:Response, data:Bytes):Void {
-        var responseData:ResponseData = cast response.backendItem;
+        var responseData:CppResponseData = cast response.backendItem;
         responseData.binaryContent = data; // Store raw bytes, not converted string
 
         // Get the client socket from the request
