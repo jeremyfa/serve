@@ -196,8 +196,14 @@ class Static {
         var ext = Path.extension(filePath).toLowerCase();
         var contentType = MimeTypes.getContentType(ext);
 
+        // Get file size for range support
+        var fileSize = backend.getFileSize(filePath);
+
         // Set content type header
         res.header("Content-Type", contentType);
+
+        // Indicate range request support
+        res.header("Accept-Ranges", "bytes");
 
         // Set cache control
         if (options.maxAge > 0) {
@@ -220,20 +226,40 @@ class Static {
             }
         }
 
+        // Check for Range header
+        var rangeHeader = req.headers.get("Range");
+        var range = parseRangeHeader(rangeHeader, fileSize);
+
+        // If Range header exists but is invalid, return 416
+        if (rangeHeader != null && range == null) {
+            res.status(416);
+            res.header("Content-Range", "bytes */" + fileSize);
+            res.text("");
+            return true;
+        }
+
         // For HEAD requests, only send headers, not the body
         if (req.method == HEAD) {
-            // Get file size for Content-Length header
-            var fileSize = backend.getFileSize(filePath);
-            res.header("Content-Length", Std.string(fileSize));
+            if (range != null) {
+                res.status(206);
+                res.header("Content-Range", "bytes " + range.start + "-" + range.end + "/" + fileSize);
+                res.header("Content-Length", Std.string(range.end - range.start + 1));
+            } else {
+                res.header("Content-Length", Std.string(fileSize));
+            }
             res.text(""); // Send empty body for HEAD requests
+        } else if (range != null) {
+            // Serve partial content
+            res.status(206);
+            res.header("Content-Range", "bytes " + range.start + "-" + range.end + "/" + fileSize);
+            var content = backend.readBinaryFileRange(filePath, range.start, range.end);
+            res.binary(content);
         } else {
-            // Check if this is a binary file type
+            // Serve full file
             if (isBinaryContent(contentType)) {
-                // Read and send binary content
                 var content = backend.readBinaryFile(filePath);
                 res.binary(content);
             } else {
-                // Read and send text content
                 var content = backend.readFile(filePath);
                 res.text(content);
             }
@@ -262,6 +288,9 @@ class Static {
 
                 // Set content type header
                 res.header("Content-Type", contentType);
+
+                // Indicate range request support
+                res.header("Accept-Ranges", "bytes");
 
                 // Set cache control
                 if (options.maxAge > 0) {
@@ -298,23 +327,42 @@ class Static {
     }
 
     function serveFileContentAsync(filePath:String, res:Response, req:Request, backend:AsyncFileBackend, contentType:String, callback:(served:Bool)->Void):Void {
-        // For HEAD requests, only send headers, not the body
-        if (req.method == HEAD) {
-            // Get file size for Content-Length header
-            backend.getFileSizeAsync(filePath, (err, size) -> {
-                if (err != null) {
-                    callback(false);
+        // Get file size first (needed for range support)
+        backend.getFileSizeAsync(filePath, (err, fileSize) -> {
+            if (err != null) {
+                callback(false);
+                return;
+            }
+
+            // Check for Range header
+            var rangeHeader = req.headers.get("Range");
+            var range = parseRangeHeader(rangeHeader, fileSize);
+
+            // If Range header exists but is invalid, return 416
+            if (rangeHeader != null && range == null) {
+                res.status(416);
+                res.header("Content-Range", "bytes */" + fileSize);
+                res.text("");
+                callback(true);
+                return;
+            }
+
+            // For HEAD requests, only send headers, not the body
+            if (req.method == HEAD) {
+                if (range != null) {
+                    res.status(206);
+                    res.header("Content-Range", "bytes " + range.start + "-" + range.end + "/" + fileSize);
+                    res.header("Content-Length", Std.string(range.end - range.start + 1));
                 } else {
-                    res.header("Content-Length", Std.string(size));
-                    res.text(""); // Send empty body for HEAD requests
-                    callback(true);
+                    res.header("Content-Length", Std.string(fileSize));
                 }
-            });
-        } else {
-            // Check if this is a binary file type
-            if (isBinaryContent(contentType)) {
-                // Read and send binary content
-                backend.readBinaryFileAsync(filePath, (err, content) -> {
+                res.text(""); // Send empty body for HEAD requests
+                callback(true);
+            } else if (range != null) {
+                // Serve partial content
+                res.status(206);
+                res.header("Content-Range", "bytes " + range.start + "-" + range.end + "/" + fileSize);
+                backend.readBinaryFileRangeAsync(filePath, range.start, range.end, (err, content) -> {
                     if (err != null) {
                         callback(false);
                     } else {
@@ -323,17 +371,28 @@ class Static {
                     }
                 });
             } else {
-                // Read and send text content
-                backend.readFileAsync(filePath, (err, content) -> {
-                    if (err != null) {
-                        callback(false);
-                    } else {
-                        res.text(content);
-                        callback(true);
-                    }
-                });
+                // Serve full file
+                if (isBinaryContent(contentType)) {
+                    backend.readBinaryFileAsync(filePath, (err, content) -> {
+                        if (err != null) {
+                            callback(false);
+                        } else {
+                            res.binary(content);
+                            callback(true);
+                        }
+                    });
+                } else {
+                    backend.readFileAsync(filePath, (err, content) -> {
+                        if (err != null) {
+                            callback(false);
+                        } else {
+                            res.text(content);
+                            callback(true);
+                        }
+                    });
+                }
             }
-        }
+        });
     }
 
     function isBinaryContent(contentType:String):Bool {
@@ -347,5 +406,71 @@ class Static {
 
         // Everything else is considered binary
         return true;
+    }
+
+    // Parse Range header and return start/end positions
+    // Returns null if invalid or unsupported format
+    function parseRangeHeader(rangeHeader:String, fileSize:Int):Null<{start:Int, end:Int}> {
+        if (rangeHeader == null || !rangeHeader.startsWith("bytes=")) {
+            return null;
+        }
+
+        var rangeSpec = rangeHeader.substring(6); // Remove "bytes="
+
+        // Check for multiple ranges (not supported)
+        if (rangeSpec.indexOf(",") != -1) {
+            return null;
+        }
+
+        var dashIdx = rangeSpec.indexOf("-");
+        if (dashIdx == -1) {
+            return null;
+        }
+
+        var startStr = rangeSpec.substring(0, dashIdx);
+        var endStr = rangeSpec.substring(dashIdx + 1);
+
+        var start:Int;
+        var end:Int;
+
+        if (startStr == "") {
+            // Suffix range: bytes=-500 means last 500 bytes
+            var suffixLength:Null<Int> = Std.parseInt(endStr);
+            if (suffixLength == null || suffixLength <= 0) {
+                return null;
+            }
+            start = fileSize - suffixLength;
+            if (start < 0) start = 0;
+            end = fileSize - 1;
+        } else {
+            var parsedStart:Null<Int> = Std.parseInt(startStr);
+            if (parsedStart == null || parsedStart < 0) {
+                return null;
+            }
+            start = parsedStart;
+
+            if (endStr == "") {
+                // Open-ended range: bytes=500- means from byte 500 to end
+                end = fileSize - 1;
+            } else {
+                var parsedEnd:Null<Int> = Std.parseInt(endStr);
+                if (parsedEnd == null) {
+                    return null;
+                }
+                end = parsedEnd;
+            }
+        }
+
+        // Validate range
+        if (start > end || start >= fileSize) {
+            return null;
+        }
+
+        // Clamp end to file size
+        if (end >= fileSize) {
+            end = fileSize - 1;
+        }
+
+        return {start: start, end: end};
     }
 }

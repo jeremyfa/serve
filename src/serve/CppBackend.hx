@@ -8,6 +8,7 @@ import haxe.io.Bytes;
 import haxe.io.BytesInput;
 import sys.FileSystem;
 import sys.io.File;
+import sys.io.FileSeek;
 import sys.net.Host;
 import sys.net.Socket;
 import sys.thread.Deque;
@@ -42,6 +43,7 @@ enum CppFileOperation {
     IsDirectory(path:String, id:Int);
     ReadFile(path:String, id:Int);
     ReadBinaryFile(path:String, id:Int);
+    ReadBinaryFileRange(path:String, start:Int, end:Int, id:Int);
     GetFileMTime(path:String, id:Int);
     GetFileSize(path:String, id:Int);
 }
@@ -235,6 +237,29 @@ class CppBackend implements Backend implements AsyncFileBackend {
                     }
                 });
 
+            case ReadBinaryFileRange(path, start, end, id):
+                var err:Dynamic = null;
+                var content:Bytes = null;
+                try {
+                    var length = end - start + 1;
+                    var fileInput = File.read(path, true);
+                    fileInput.seek(start, FileSeek.SeekBegin);
+                    content = Bytes.alloc(length);
+                    fileInput.readBytes(content, 0, length);
+                    fileInput.close();
+                } catch (e:Dynamic) {
+                    err = e;
+                }
+                callbackQueue.add({
+                    callback: () -> {
+                        var cb = pendingFileJobs.get(id);
+                        if (cb != null) {
+                            pendingFileJobs.remove(id);
+                            (cb:((error:Dynamic, content:Bytes)->Void))(err, content);
+                        }
+                    }
+                });
+
             case GetFileMTime(path, id):
                 var err:Dynamic = null;
                 var mtime:Float = 0;
@@ -319,6 +344,24 @@ class CppBackend implements Backend implements AsyncFileBackend {
                 query = Utils.parseQueryString(pending.queryString);
             }
 
+            // Parse host and port from Host header
+            var reqHost:String = serverHost;
+            var reqPort:Int = serverPort;
+            var hostHeader = pending.headers.get('Host');
+            if (hostHeader != null && hostHeader.length > 0) {
+                var colonIdx = hostHeader.lastIndexOf(':');
+                if (colonIdx > 0) {
+                    reqHost = hostHeader.substring(0, colonIdx);
+                    var portStr = hostHeader.substring(colonIdx + 1);
+                    var parsedPort = Std.parseInt(portStr);
+                    if (parsedPort != null) {
+                        reqPort = parsedPort;
+                    }
+                } else {
+                    reqHost = hostHeader;
+                }
+            }
+
             // Create Request object
             var req:Request = {
                 server: server,
@@ -329,6 +372,8 @@ class CppBackend implements Backend implements AsyncFileBackend {
                 body: pending.body,
                 rawBody: pending.rawBody,
                 headers: pending.headers,
+                host: reqHost,
+                port: reqPort,
                 backendItem: pending.clientSocket
             };
 
@@ -728,6 +773,14 @@ class CppBackend implements Backend implements AsyncFileBackend {
         pendingFileJobs.set(jobId, callback);
         fileJobQueue.add({
             operation: GetFileSize(path, jobId)
+        });
+    }
+
+    public function readBinaryFileRangeAsync(path:String, start:Int, end:Int, callback:(error:Dynamic, content:Bytes)->Void):Void {
+        var jobId = nextJobId++;
+        pendingFileJobs.set(jobId, callback);
+        fileJobQueue.add({
+            operation: ReadBinaryFileRange(path, start, end, jobId)
         });
     }
 

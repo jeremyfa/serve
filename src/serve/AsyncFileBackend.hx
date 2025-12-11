@@ -16,4 +16,6 @@ interface AsyncFileBackend {
 
     function getFileSizeAsync(path:String, callback:(error:Dynamic, size:Int)->Void):Void;
 
+    function readBinaryFileRangeAsync(path:String, start:Int, end:Int, callback:(error:Dynamic, content:Bytes)->Void):Void;
+
 }

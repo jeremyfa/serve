@@ -16,4 +16,6 @@ interface SyncFileBackend {
 
     function getFileSize(path:String):Int;
 
+    function readBinaryFileRange(path:String, start:Int, end:Int):Bytes;
+
 }

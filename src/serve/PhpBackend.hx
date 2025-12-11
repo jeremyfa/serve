@@ -71,6 +71,24 @@ class PhpBackend implements Backend implements SyncFileBackend {
             case _: GET;
         }
 
+        // Parse host and port from Host header
+        var reqHost:String = host();
+        var reqPort:Int = port();
+        final hostHeader = headers.get('Host');
+        if (hostHeader != null && hostHeader.length > 0) {
+            final colonIdx = hostHeader.lastIndexOf(':');
+            if (colonIdx > 0) {
+                reqHost = hostHeader.substring(0, colonIdx);
+                final portStr = hostHeader.substring(colonIdx + 1);
+                final parsedPort = Std.parseInt(portStr);
+                if (parsedPort != null) {
+                    reqPort = parsedPort;
+                }
+            } else {
+                reqHost = hostHeader;
+            }
+        }
+
         // Full request object
         final req:Request = {
             server: server,
@@ -80,7 +98,9 @@ class PhpBackend implements Backend implements SyncFileBackend {
             query: query,
             body: body,
             rawBody: rawBody,
-            headers: headers
+            headers: headers,
+            host: reqHost,
+            port: reqPort
         };
 
         // Initial response object
@@ -139,6 +159,15 @@ class PhpBackend implements Backend implements SyncFileBackend {
 
     public function getFileSize(path:String):Int {
         return Syntax.code('filesize({0})', path);
+    }
+
+    public function readBinaryFileRange(path:String, start:Int, end:Int):Bytes {
+        var length = end - start + 1;
+        var handle:Dynamic = Syntax.code('fopen({0}, "rb")', path);
+        Syntax.code('fseek({0}, {1})', handle, start);
+        var content:String = Syntax.code('fread({0}, {1})', handle, length);
+        Syntax.code('fclose({0})', handle);
+        return Bytes.ofString(content);
     }
 
 }

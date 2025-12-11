@@ -144,6 +144,7 @@ class TestRunner {
             testHttpMethods,
             testStaticHTML,
             testBinaryImage,
+            testContentRange,
             testHeaders,
             test404,
             testConcurrentRequests,
@@ -240,6 +241,34 @@ class TestRunner {
 
         req.on('error', (e) -> {
             callback(null, 0);
+        });
+
+        req.end();
+    }
+
+    static function httpGetBytesWithHeaders(host:String, port:Int, path:String, requestHeaders:Dynamic, callback:(bytes:Bytes, status:Int, responseHeaders:Dynamic)->Void) {
+        var options:Dynamic = {
+            hostname: host,
+            port: port,
+            path: path,
+            method: 'GET',
+            headers: requestHeaders
+        };
+
+        var req = Http.request(options, (res) -> {
+            var chunks:Array<Buffer> = [];
+            res.on('data', (chunk:Buffer) -> {
+                chunks.push(chunk);
+            });
+            res.on('end', () -> {
+                var buffer = Buffer.concat(chunks);
+                var bytes = Bytes.ofData(cast buffer);
+                callback(bytes, res.statusCode, res.headers);
+            });
+        });
+
+        req.on('error', (e) -> {
+            callback(null, 0, null);
         });
 
         req.end();
@@ -436,6 +465,133 @@ class TestRunner {
                     test("Downloaded bytes received", false, "No bytes received");
                 }
                 done();
+            });
+        });
+    }
+
+    static function testContentRange(host:String, port:Int, done:()->Void) {
+        Sys.println("\n" + BLUE + BOLD + "▶ Testing Content-Range (HTTP Range Requests)" + RESET);
+
+        // Read original file to compare against
+        Fs.readFile("test/assets/haxe-logo.png", (err, data) -> {
+            if (err != null) {
+                test("Read original file for range comparison", false, Std.string(err));
+                done();
+                return;
+            }
+
+            var originalBytes = Bytes.ofData(cast data);
+            var fileSize = originalBytes.length; // 8571 bytes
+
+            // Test 1: Check Accept-Ranges header on full file request
+            httpRequest(host, port, "/haxe-logo.png", "GET", null, null, (content, status, headers) -> {
+                var acceptRanges = Reflect.field(headers, "accept-ranges");
+                test("Full request includes Accept-Ranges: bytes header",
+                    acceptRanges == "bytes",
+                    "Got: " + acceptRanges);
+
+                // Test 2: Range request for first 100 bytes (bytes=0-99)
+                httpGetBytesWithHeaders(host, port, "/haxe-logo.png", {Range: "bytes=0-99"}, (bytes, status, headers) -> {
+                    test("Range bytes=0-99 returns 206 Partial Content", status == 206);
+                    test("Range bytes=0-99 returns exactly 100 bytes",
+                        bytes != null && bytes.length == 100,
+                        bytes != null ? "Got " + bytes.length + " bytes" : "No bytes received");
+
+                    var contentRange = Reflect.field(headers, "content-range");
+                    test("Range bytes=0-99 has correct Content-Range header",
+                        contentRange == "bytes 0-99/" + fileSize,
+                        "Got: " + contentRange);
+
+                    // Verify actual bytes match original
+                    var bytesMatch = true;
+                    if (bytes != null && bytes.length == 100) {
+                        for (i in 0...100) {
+                            if (bytes.get(i) != originalBytes.get(i)) {
+                                bytesMatch = false;
+                                break;
+                            }
+                        }
+                    } else {
+                        bytesMatch = false;
+                    }
+                    test("Range bytes=0-99 content matches original first 100 bytes", bytesMatch);
+
+                    // Test 3: Suffix range (last 500 bytes)
+                    httpGetBytesWithHeaders(host, port, "/haxe-logo.png", {Range: "bytes=-500"}, (bytes, status, headers) -> {
+                        test("Suffix range bytes=-500 returns 206", status == 206);
+                        test("Suffix range bytes=-500 returns 500 bytes",
+                            bytes != null && bytes.length == 500,
+                            bytes != null ? "Got " + bytes.length + " bytes" : "No bytes received");
+
+                        var contentRange = Reflect.field(headers, "content-range");
+                        var expectedStart = fileSize - 500;
+                        test("Suffix range has correct Content-Range header",
+                            contentRange == "bytes " + expectedStart + "-" + (fileSize - 1) + "/" + fileSize,
+                            "Got: " + contentRange);
+
+                        // Verify bytes match the last 500 bytes of original
+                        var suffixMatch = true;
+                        if (bytes != null && bytes.length == 500) {
+                            for (i in 0...500) {
+                                if (bytes.get(i) != originalBytes.get(expectedStart + i)) {
+                                    suffixMatch = false;
+                                    break;
+                                }
+                            }
+                        } else {
+                            suffixMatch = false;
+                        }
+                        test("Suffix range content matches original last 500 bytes", suffixMatch);
+
+                        // Test 4: Open-ended range (bytes=1000-)
+                        httpGetBytesWithHeaders(host, port, "/haxe-logo.png", {Range: "bytes=1000-"}, (bytes, status, headers) -> {
+                            var expectedLength = fileSize - 1000;
+                            test("Open-ended range bytes=1000- returns 206", status == 206);
+                            test("Open-ended range returns " + expectedLength + " bytes",
+                                bytes != null && bytes.length == expectedLength,
+                                bytes != null ? "Got " + bytes.length + " bytes" : "No bytes received");
+
+                            var contentRange = Reflect.field(headers, "content-range");
+                            test("Open-ended range has correct Content-Range header",
+                                contentRange == "bytes 1000-" + (fileSize - 1) + "/" + fileSize,
+                                "Got: " + contentRange);
+
+                            // Test 5: Invalid range (beyond file size) should return 416
+                            httpGetBytesWithHeaders(host, port, "/haxe-logo.png", {Range: "bytes=99999-"}, (bytes, status, headers) -> {
+                                test("Invalid range bytes=99999- returns 416 Range Not Satisfiable", status == 416);
+
+                                var contentRange = Reflect.field(headers, "content-range");
+                                test("Invalid range has Content-Range: bytes */" + fileSize,
+                                    contentRange == "bytes */" + fileSize,
+                                    "Got: " + contentRange);
+
+                                // Test 6: Middle range (bytes=1000-1999)
+                                httpGetBytesWithHeaders(host, port, "/haxe-logo.png", {Range: "bytes=1000-1999"}, (bytes, status, headers) -> {
+                                    test("Middle range bytes=1000-1999 returns 206", status == 206);
+                                    test("Middle range returns exactly 1000 bytes",
+                                        bytes != null && bytes.length == 1000,
+                                        bytes != null ? "Got " + bytes.length + " bytes" : "No bytes received");
+
+                                    // Verify middle range bytes
+                                    var middleMatch = true;
+                                    if (bytes != null && bytes.length == 1000) {
+                                        for (i in 0...1000) {
+                                            if (bytes.get(i) != originalBytes.get(1000 + i)) {
+                                                middleMatch = false;
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        middleMatch = false;
+                                    }
+                                    test("Middle range content matches original bytes 1000-1999", middleMatch);
+
+                                    done();
+                                });
+                            });
+                        });
+                    });
+                });
             });
         });
     }

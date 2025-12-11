@@ -162,6 +162,24 @@ class NodeJsBackend implements Backend implements AsyncFileBackend {
                 }
             }
 
+            // Parse host and port from Host header
+            var reqHost:String = serverHost;
+            var reqPort:Int = serverPort;
+            final hostHeader = headers.get('Host');
+            if (hostHeader != null && hostHeader.length > 0) {
+                final colonIdx = hostHeader.lastIndexOf(':');
+                if (colonIdx > 0) {
+                    reqHost = hostHeader.substring(0, colonIdx);
+                    final portStr = hostHeader.substring(colonIdx + 1);
+                    final parsedPort = Std.parseInt(portStr);
+                    if (parsedPort != null) {
+                        reqPort = parsedPort;
+                    }
+                } else {
+                    reqHost = hostHeader;
+                }
+            }
+
             // Create request object
             final req:Request = {
                 server: server,
@@ -172,6 +190,8 @@ class NodeJsBackend implements Backend implements AsyncFileBackend {
                 body: body,
                 rawBody: bodyData,
                 headers: headers,
+                host: reqHost,
+                port: reqPort,
                 backendItem: nodeReq
             };
 
@@ -265,6 +285,25 @@ class NodeJsBackend implements Backend implements AsyncFileBackend {
             } else {
                 callback(null, Std.int(stats.size));
             }
+        });
+    }
+
+    public function readBinaryFileRangeAsync(path:String, start:Int, end:Int, callback:(error:Dynamic, content:Bytes)->Void):Void {
+        var chunks:Array<Buffer> = [];
+        var stream = Fs.createReadStream(path, {start: start, end: end});
+        stream.on('data', (chunk:Buffer) -> {
+            chunks.push(chunk);
+        });
+        stream.on('end', () -> {
+            var totalLength = 0;
+            for (chunk in chunks) {
+                totalLength += chunk.length;
+            }
+            var result = Buffer.concat(chunks, totalLength);
+            callback(null, result.hxToBytes());
+        });
+        stream.on('error', (err:Dynamic) -> {
+            callback(err, null);
         });
     }
 

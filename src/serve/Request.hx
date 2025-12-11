@@ -18,6 +18,10 @@ class Request {
 
     public var headers:Map<String,String>;
 
+    public var host:String;
+
+    public var port:Int;
+
     public var backendItem:Any = null;
 
     public var server(default, null):Server;
